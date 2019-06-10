@@ -3,9 +3,8 @@ const path = require('path');
 
 module.exports = {
   entry: "./bootstrap.ts",  
-  resolve: {
-    extensions: [".ts", ".tsx", ".js", ".wasm"]
-  },
+  devtool: 'inline-source-map',
+
   module: {
     rules: [
       {
@@ -14,6 +13,9 @@ module.exports = {
         exclude: /node_modules/
       }
     ]
+  },
+  resolve: {
+    extensions: [".ts", ".tsx", ".js", ".wasm"]
   },
   output: {
     path: path.resolve(__dirname, "dist"),
