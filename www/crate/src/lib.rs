@@ -1,12 +1,127 @@
 mod utils;
 
+use js_sys::WebAssembly;
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+
+extern crate web_sys;
+
+// A macro to provide `println!(..)`-style syntax for `console.log` logging.
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
 // allocator.
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+const CELL_SIZE: f64 = 5.0; // px
+const CELL_SIZEU: u32 = 5; // px
+
+#[wasm_bindgen(start)]
+pub fn main() -> Result<(), JsValue> {
+    console_error_panic_hook::set_once();
+    let document = web_sys::window().unwrap().document().unwrap();
+    let canvas = document
+        .get_element_by_id("game-of-life-canvas")
+        .unwrap()
+        .dyn_into::<HtmlCanvasElement>()?;
+
+    let universe = Universe::new();
+    let width = universe.width();
+    let height = universe.height();
+    canvas.set_height((CELL_SIZEU + 1) * height + 1);
+    canvas.set_width((CELL_SIZEU + 1) * width + 1);
+
+    let ctx = canvas
+        .get_context("2d")?
+        .unwrap()
+        .dyn_into::<CanvasRenderingContext2d>()?;
+
+    draw_grid(&ctx, &universe);
+    //WebGlRenderingContext
+    //CanvasRenderingContext2D
+    startRenderLoop();
+    Ok(())
+}
+
+fn startRenderLoop() {
+    let f = Rc::new(RefCell::new(None));
+    let g = f.clone();
+    let mut i = 0;
+    log!("Start loop");
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
+        if i > 300 {
+            log!("All done!");
+
+            // Drop our handle to this closure so that it will get cleaned
+            // up once we return.
+            let _ = f.borrow_mut().take();
+            return;
+        }
+
+        i += 1;
+
+        log!("requestAnimationFrame has been called {} times.", i);
+        
+        // Schedule ourself for another requestAnimationFrame callback.
+        request_animation_frame(f.borrow().as_ref().unwrap());
+    }) as Box<FnMut()>));
+
+    request_animation_frame(g.borrow().as_ref().unwrap());
+}
+
+fn window() -> web_sys::Window {
+    web_sys::window().expect("no global `window` exists")
+}
+
+fn request_animation_frame(f: &Closure<FnMut()>) {
+    window()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("should register `requestAnimationFrame` OK");
+}
+
+pub fn draw_grid(ctx: &CanvasRenderingContext2d, universe: &Universe) {
+    let width: u32 = universe.width();
+    let widthf: f64 = f64::from(width);
+    let height: u32 = universe.height();
+    let heightf: f64 = f64::from(height);
+
+    let grid_color: wasm_bindgen::JsValue = JsValue::from_str("#CCCCCC");
+
+    ctx.begin_path();
+    ctx.set_stroke_style(&grid_color);
+
+    // Vertical lines.
+    for i in 0..width {
+        let j = f64::from(i);
+        ctx.move_to(j * (CELL_SIZE + 1.0) + 1.0, 0.0);
+        ctx.line_to(
+            j * (CELL_SIZE + 1.0) + 1.0,
+            (CELL_SIZE + 1.0) * heightf + 1.0,
+        );
+    }
+
+    // Horizontal lines.
+    for j in 0..height {
+        let jf = f64::from(j);
+        ctx.move_to(0.0, jf * (CELL_SIZE + 1.0) + 1.0);
+        ctx.line_to(
+            (CELL_SIZE + 1.0) * widthf + 1.0,
+            jf * (CELL_SIZE + 1.0) + 1.0,
+        );
+    }
+
+    ctx.stroke();
+}
 
 #[wasm_bindgen]
 #[repr(u8)]
@@ -30,15 +145,6 @@ pub struct Universe {
     width: u32,
     height: u32,
     cells: Vec<Cell>,
-}
-
-extern crate web_sys;
-
-// A macro to provide `println!(..)`-style syntax for `console.log` logging.
-macro_rules! log {
-    ( $( $t:tt )* ) => {
-        web_sys::console::log_1(&format!( $( $t )* ).into());
-    }
 }
 
 impl Universe {
@@ -173,13 +279,13 @@ impl Universe {
                 let cell = self.cells[idx];
                 let live_neighbors = self.live_neighbor_count(row, col);
 
-                //log!(
-                //    "cell[{}, {}] is initially {:?} and has {} live neighbors",
-                //    row,
-                //    col,
-                //    cell,
-                //    live_neighbors
-                //);
+                log!(
+                    "cell[{}, {}] is initially {:?} and has {} live neighbors",
+                    row,
+                    col,
+                    cell,
+                    live_neighbors
+                );
 
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
