@@ -1,12 +1,16 @@
 mod utils;
 
-use js_sys::WebAssembly;
+//use js_sys::WebAssembly;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::u32;
+use std::usize;
 
 use wasm_bindgen::prelude::*;
+
+use wasm_bindgen::Clamped;
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};
 
 extern crate web_sys;
 
@@ -23,8 +27,8 @@ macro_rules! log {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
-const CELL_SIZE: f64 = 5.0; // px
-const CELL_SIZEU: u32 = 5; // px
+const CELL_SIZE: f64 = 4.0; // px
+const CELL_SIZEU: u32 = 4; // px
 
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
@@ -41,19 +45,17 @@ pub fn main() -> Result<(), JsValue> {
     canvas.set_height((CELL_SIZEU + 1) * height + 1);
     canvas.set_width((CELL_SIZEU + 1) * width + 1);
 
+    let options = JsValue::from_str("{ alpha: false }");
     let ctx = canvas
-        .get_context("2d")?
+        .get_context_with_context_options("2d", &options)?
         .unwrap()
         .dyn_into::<CanvasRenderingContext2d>()?;
 
-
-    //WebGlRenderingContext
-    //CanvasRenderingContext2D
-    startRenderLoop(ctx, universe);
+    start_render_loop(ctx, universe);
     Ok(())
 }
 
-fn startRenderLoop(ctx: CanvasRenderingContext2d, universe: Universe) {
+fn start_render_loop(ctx: CanvasRenderingContext2d, universe: Universe) {
     fn request_animation_frame(f: &Closure<FnMut()>) {
         web_sys::window()
             .unwrap()
@@ -84,16 +86,32 @@ fn startRenderLoop(ctx: CanvasRenderingContext2d, universe: Universe) {
 pub struct CanvasRenderer {
     universe: Universe,
     ctx: CanvasRenderingContext2d,
+    pixel_data: Box<Vec<u8>>,
+    image_data: ImageData,
 }
 
 impl CanvasRenderer {
     pub fn new(ctx: CanvasRenderingContext2d, universe: Universe) -> CanvasRenderer {
-        CanvasRenderer { universe, ctx }
+        let width: u32 = universe.width();
+        let height: u32 = universe.height();
+        let length = (width * height) as usize;
+
+        let mut pixel_data = Box::new(vec![0; length * 4]);
+
+        let image_data =
+            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut *pixel_data), width, height)
+                .unwrap();
+        CanvasRenderer {
+            universe,
+            ctx,
+            pixel_data,
+            image_data,
+        }
     }
 
     pub fn render(&mut self) {
         self.universe.tick();
-        self.draw_grid();
+        //self.draw_grid();
         self.draw_cells();
     }
 
@@ -129,64 +147,34 @@ impl CanvasRenderer {
         self.ctx.stroke();
     }
 
-    pub fn draw_cells(&self) {
+    pub fn draw_cells(&mut self) {
         let cells = self.universe.get_cells();
-
         let width: u32 = self.universe.width();
         let height: u32 = self.universe.height();
-        //let cells = new Uint8Array(memory.buffer, cellsPtr, width * height);
+        let length = (width * height) as usize;
 
-        self.ctx.begin_path();
+        let data = &mut *&mut self.pixel_data;
 
-        // Alive cells.
-        self.ctx.set_fill_style(&self.universe.alive_color);
-
-        for row in 0..height {
-            let rowf: f64 = f64::from(row);
-            for col in 0..width {
-                let idx = self.universe.get_index(row, col);
-                if cells[idx] != Cell::Alive {
-                    continue;
-                }
-
-                let colf: f64 = f64::from(col);
-                self.ctx.fill_rect(
-                    colf * (CELL_SIZE + 1.0) + 1.0,
-                    rowf * (CELL_SIZE + 1.0) + 1.0,
-                    CELL_SIZE,
-                    CELL_SIZE,
-                );
-            }
-
-        }
-
-
-        // Dead cells.
-        self.ctx.set_fill_style(&self.universe.dead_color);
-        for row in 0..height {
-            let rowf: f64 = f64::from(row);
-            for col in 0..width {
-                let idx = self.universe.get_index(row, col);
-                if cells[idx] != Cell::Dead {
-                    continue;
-                }
-
-                let colf: f64 = f64::from(col);
-                self.ctx.fill_rect(
-                    colf * (CELL_SIZE + 1.0) + 1.0,
-                    rowf * (CELL_SIZE + 1.0) + 1.0,
-                    CELL_SIZE,
-                    CELL_SIZE,
-                );
+        for i in 0..length {
+            if cells[i] == Cell::Alive {
+                let idx = i * 4;
+                data[idx] = 0;
+                data[idx + 1] = 0;
+                data[idx + 2] = 0;
+                data[idx + 3] = 255;
+            } else if cells[i] == Cell::Dead {
+                let idx = i * 4;
+                data[idx] = 255;
+                data[idx + 1] = 255;
+                data[idx + 2] = 255;
+                data[idx + 3] = 255;
             }
         }
 
-
-        self.ctx.stroke();
+        self.ctx.put_image_data(&self.image_data, 0.0, 0.0).unwrap();
     }
 }
 
-#[wasm_bindgen]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cell {
@@ -203,7 +191,6 @@ impl Cell {
     }
 }
 
-#[wasm_bindgen]
 pub struct Universe {
     width: u32,
     height: u32,
@@ -279,13 +266,11 @@ impl Universe {
     }
 }
 
-/// Public methods, exported to JavaScript.
-#[wasm_bindgen]
 impl Universe {
     pub fn new() -> Universe {
         utils::set_panic_hook();
-        let width = 128;
-        let height = 128;
+        let width = 256;
+        let height = 256;
 
         let cells = (0..width * height)
             .map(|i| {
@@ -343,7 +328,7 @@ impl Universe {
     }
 
     pub fn tick(&mut self) {
-        let _timer = Timer::new("Universe::tick");
+        //let _timer = Timer::new("Universe::tick");
         let mut next = self.cells.clone();
 
         for row in 0..self.height {

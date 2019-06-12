@@ -16,12 +16,13 @@ features = [
   'Document',
   'Element',
   'HtmlCanvasElement',
-  'WebGlBuffer',
-  'WebGlRenderingContext',
-  'WebGlProgram',
-  'WebGlShader',
+  #'WebGlBuffer',
+  #'WebGlRenderingContext',
+  #'WebGlProgram',
+  #'WebGlShader',
   'Window',
   'console',
+  'ImageData',
   'CanvasRenderingContext2d'
 ]
 
@@ -45,6 +46,6 @@ wee_alloc = { version = "0.4.2", optional = true }
 [dev-dependencies]
 wasm-bindgen-test = "0.2.45"
 
-[profile.debug]
+[profile.release]
 # Tell `rustc` to optimize for small code size.
-opt-level = "s"
+#opt-level = "s"
