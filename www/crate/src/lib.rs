@@ -1,6 +1,5 @@
 mod utils;
 
-//use js_sys::WebAssembly;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::u32;
@@ -17,6 +16,7 @@ extern crate web_sys;
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
 macro_rules! log {
     ( $( $t:tt )* ) => {
+        #[cfg(debug_assertions)]
         web_sys::console::log_1(&format!( $( $t )* ).into());
     }
 }
@@ -26,9 +26,6 @@ macro_rules! log {
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
-
-const CELL_SIZE: f64 = 4.0; // px
-const CELL_SIZEU: u32 = 4; // px
 
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
@@ -123,42 +120,9 @@ impl CanvasRenderer {
 
     pub fn render(&mut self) {
         self.universe.tick();
-        //self.draw_grid();
         self.draw_cells();
     }
-    //
-    //pub fn draw_grid(&self) {
-    //    let width: u32 = self.universe.width();
-    //    let widthf: f64 = f64::from(width);
-    //    let height: u32 = self.universe.height();
-    //    let heightf: f64 = f64::from(height);
-    //
-    //    self.ctx.begin_path();
-    //    self.ctx.set_stroke_style(&self.universe.grid_color);
-    //
-    //    // Vertical lines.
-    //    for column in 0..width {
-    //        let columnf = f64::from(column);
-    //        self.ctx.move_to(columnf * (CELL_SIZE + 1.0) + 1.0, 0.0);
-    //        self.ctx.line_to(
-    //            columnf * (CELL_SIZE + 1.0) + 1.0,
-    //            (CELL_SIZE + 1.0) * heightf + 1.0,
-    //        );
-    //    }
-    //
-    //    // Horizontal lines.
-    //    for row in 0..height {
-    //        let rowf = f64::from(row);
-    //        self.ctx.move_to(0.0, rowf * (CELL_SIZE + 1.0) + 1.0);
-    //        self.ctx.line_to(
-    //            (CELL_SIZE + 1.0) * widthf + 1.0,
-    //            rowf * (CELL_SIZE + 1.0) + 1.0,
-    //        );
-    //    }
-    //
-    //    self.ctx.stroke();
-    //}
-    //
+
     pub fn draw_cells(&mut self) {
         let cells = self.universe.get_cells();
         let width: u32 = self.universe.width();
@@ -207,9 +171,6 @@ pub struct Universe {
     width: u32,
     height: u32,
     cells: Vec<Cell>,
-    grid_color: wasm_bindgen::JsValue,
-    dead_color: wasm_bindgen::JsValue,
-    alive_color: wasm_bindgen::JsValue,
 }
 
 impl Universe {
@@ -280,7 +241,6 @@ impl Universe {
 
 impl Universe {
     pub fn new() -> Universe {
-        utils::set_panic_hook();
         let width = 270;
         let height = 270;
 
@@ -294,17 +254,10 @@ impl Universe {
             })
             .collect();
 
-        let grid_color: wasm_bindgen::JsValue = JsValue::from_str("#CCCCCC");
-        let dead_color: wasm_bindgen::JsValue = JsValue::from_str("#FFFFFF");
-        let alive_color: wasm_bindgen::JsValue = JsValue::from_str("#000000");
-
         Universe {
             width,
             height,
             cells,
-            grid_color,
-            dead_color,
-            alive_color,
         }
     }
 
@@ -316,31 +269,7 @@ impl Universe {
         self.height
     }
 
-    pub fn cells(&self) -> *const Cell {
-        self.cells.as_ptr()
-    }
-
-    pub fn set_width(&mut self, width: u32) {
-        self.width = width;
-        self.cells = (0..width * self.height).map(|_i| Cell::Dead).collect();
-    }
-
-    pub fn set_height(&mut self, height: u32) {
-        self.height = height;
-        self.cells = (0..self.width * height).map(|_i| Cell::Dead).collect();
-    }
-
-    pub fn render(&self) -> String {
-        self.to_string()
-    }
-
-    pub fn toggle_cell(&mut self, row: u32, column: u32) {
-        let idx = self.get_index(row, column);
-        self.cells[idx].toggle();
-    }
-
     pub fn tick(&mut self) {
-        //let _timer = Timer::new("Universe::tick");
         let mut next = self.cells.clone();
 
         for row in 0..self.height {
@@ -348,14 +277,6 @@ impl Universe {
                 let idx = self.get_index(row, col);
                 let cell = self.cells[idx];
                 let live_neighbors = self.live_neighbor_count(row, col);
-
-                //log!(
-                //    "cell[{}, {}] is initially {:?} and has {} live neighbors",
-                //   row,
-                //    col,
-                //    cell,
-                //    live_neighbors
-                //);
 
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
@@ -373,46 +294,10 @@ impl Universe {
                     // All other cells remain in the same state.
                     (otherwise, _) => otherwise,
                 };
-                //log!("    it becomes {:?}", next_cell);
                 next[idx] = next_cell;
             }
         }
 
         self.cells = next;
-    }
-}
-
-use std::fmt;
-
-impl fmt::Display for Universe {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for line in self.cells.as_slice().chunks(self.width as usize) {
-            for &cell in line {
-                let symbol = if cell == Cell::Dead { '◻' } else { '◼' };
-                write!(f, "{}", symbol)?;
-            }
-            write!(f, "\n")?;
-        }
-
-        Ok(())
-    }
-}
-
-use web_sys::console;
-
-pub struct Timer<'a> {
-    name: &'a str,
-}
-
-impl<'a> Timer<'a> {
-    pub fn new(name: &'a str) -> Timer<'a> {
-        console::time_with_label(name);
-        Timer { name }
-    }
-}
-
-impl<'a> Drop for Timer<'a> {
-    fn drop(&mut self) {
-        console::time_end_with_label(self.name);
     }
 }
