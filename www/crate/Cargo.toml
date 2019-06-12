@@ -23,7 +23,9 @@ features = [
   'Window',
   'console',
   'ImageData',
-  'CanvasRenderingContext2d'
+  'CanvasRenderingContext2d',
+  'Performance', 
+  'PerformanceTiming'
 ]
 
 [dependencies]

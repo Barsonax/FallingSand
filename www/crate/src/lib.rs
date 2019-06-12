@@ -42,8 +42,8 @@ pub fn main() -> Result<(), JsValue> {
     let universe = Universe::new();
     let width = universe.width();
     let height = universe.height();
-    canvas.set_height((CELL_SIZEU + 1) * height + 1);
-    canvas.set_width((CELL_SIZEU + 1) * width + 1);
+    canvas.set_height(height);
+    canvas.set_width(width);
 
     let options = JsValue::from_str("{ alpha: false }");
     let ctx = canvas
@@ -63,6 +63,11 @@ fn start_render_loop(ctx: CanvasRenderingContext2d, universe: Universe) {
             .expect("should register `requestAnimationFrame` OK");
     }
 
+    ctx.set_image_smoothing_enabled(false);
+    let window = web_sys::window().expect("should have a window in this context");
+    let performance = window
+        .performance()
+        .expect("performance should be available");
     let renderer = CanvasRenderer::new(ctx, universe);
 
     log!("Starting loop...");
@@ -71,11 +76,18 @@ fn start_render_loop(ctx: CanvasRenderingContext2d, universe: Universe) {
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
+    let mut lastFrameTimeStamp = performance.now();
     let c = move || {
         if let Some(the_self) = Rc::get_mut(&mut rc) {
             the_self.render();
         };
         request_animation_frame(f.borrow().as_ref().unwrap());
+
+        let now = performance.now();
+        let delta = now - lastFrameTimeStamp;
+        lastFrameTimeStamp = now;
+        let fps = 1.0 / delta * 1000.0;
+        log!("fps: {}", fps);
     };
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(c) as Box<FnMut()>));
@@ -114,39 +126,39 @@ impl CanvasRenderer {
         //self.draw_grid();
         self.draw_cells();
     }
-
-    pub fn draw_grid(&self) {
-        let width: u32 = self.universe.width();
-        let widthf: f64 = f64::from(width);
-        let height: u32 = self.universe.height();
-        let heightf: f64 = f64::from(height);
-
-        self.ctx.begin_path();
-        self.ctx.set_stroke_style(&self.universe.grid_color);
-
-        // Vertical lines.
-        for column in 0..width {
-            let columnf = f64::from(column);
-            self.ctx.move_to(columnf * (CELL_SIZE + 1.0) + 1.0, 0.0);
-            self.ctx.line_to(
-                columnf * (CELL_SIZE + 1.0) + 1.0,
-                (CELL_SIZE + 1.0) * heightf + 1.0,
-            );
-        }
-
-        // Horizontal lines.
-        for row in 0..height {
-            let rowf = f64::from(row);
-            self.ctx.move_to(0.0, rowf * (CELL_SIZE + 1.0) + 1.0);
-            self.ctx.line_to(
-                (CELL_SIZE + 1.0) * widthf + 1.0,
-                rowf * (CELL_SIZE + 1.0) + 1.0,
-            );
-        }
-
-        self.ctx.stroke();
-    }
-
+    //
+    //pub fn draw_grid(&self) {
+    //    let width: u32 = self.universe.width();
+    //    let widthf: f64 = f64::from(width);
+    //    let height: u32 = self.universe.height();
+    //    let heightf: f64 = f64::from(height);
+    //
+    //    self.ctx.begin_path();
+    //    self.ctx.set_stroke_style(&self.universe.grid_color);
+    //
+    //    // Vertical lines.
+    //    for column in 0..width {
+    //        let columnf = f64::from(column);
+    //        self.ctx.move_to(columnf * (CELL_SIZE + 1.0) + 1.0, 0.0);
+    //        self.ctx.line_to(
+    //            columnf * (CELL_SIZE + 1.0) + 1.0,
+    //            (CELL_SIZE + 1.0) * heightf + 1.0,
+    //        );
+    //    }
+    //
+    //    // Horizontal lines.
+    //    for row in 0..height {
+    //        let rowf = f64::from(row);
+    //        self.ctx.move_to(0.0, rowf * (CELL_SIZE + 1.0) + 1.0);
+    //        self.ctx.line_to(
+    //            (CELL_SIZE + 1.0) * widthf + 1.0,
+    //            rowf * (CELL_SIZE + 1.0) + 1.0,
+    //        );
+    //    }
+    //
+    //    self.ctx.stroke();
+    //}
+    //
     pub fn draw_cells(&mut self) {
         let cells = self.universe.get_cells();
         let width: u32 = self.universe.width();
@@ -269,8 +281,8 @@ impl Universe {
 impl Universe {
     pub fn new() -> Universe {
         utils::set_panic_hook();
-        let width = 256;
-        let height = 256;
+        let width = 270;
+        let height = 270;
 
         let cells = (0..width * height)
             .map(|i| {
