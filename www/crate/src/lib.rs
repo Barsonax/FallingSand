@@ -28,7 +28,7 @@ const CELL_SIZEU: u32 = 5; // px
 
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
-    console_error_panic_hook::set_once();
+    utils::set_panic_hook();
     let document = web_sys::window().unwrap().document().unwrap();
     let canvas = document
         .get_element_by_id("game-of-life-canvas")
@@ -46,81 +46,144 @@ pub fn main() -> Result<(), JsValue> {
         .unwrap()
         .dyn_into::<CanvasRenderingContext2d>()?;
 
-    draw_grid(&ctx, &universe);
+
     //WebGlRenderingContext
     //CanvasRenderingContext2D
-    startRenderLoop();
+    startRenderLoop(ctx, universe);
     Ok(())
 }
 
-fn startRenderLoop() {
+fn startRenderLoop(ctx: CanvasRenderingContext2d, universe: Universe) {
+    fn request_animation_frame(f: &Closure<FnMut()>) {
+        web_sys::window()
+            .unwrap()
+            .request_animation_frame(f.as_ref().unchecked_ref())
+            .expect("should register `requestAnimationFrame` OK");
+    }
+
+    let renderer = CanvasRenderer::new(ctx, universe);
+
+    log!("Starting loop...");
+
+    let mut rc = Rc::new(renderer);
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
-    let mut i = 0;
-    log!("Start loop");
-    *g.borrow_mut() = Some(Closure::wrap(Box::new(move || {
-        if i > 300 {
-            log!("All done!");
 
-            // Drop our handle to this closure so that it will get cleaned
-            // up once we return.
-            let _ = f.borrow_mut().take();
-            return;
-        }
-
-        i += 1;
-
-        log!("requestAnimationFrame has been called {} times.", i);
-        
-        // Schedule ourself for another requestAnimationFrame callback.
+    let c = move || {
+        if let Some(the_self) = Rc::get_mut(&mut rc) {
+            the_self.render();
+        };
         request_animation_frame(f.borrow().as_ref().unwrap());
-    }) as Box<FnMut()>));
+    };
+
+    *g.borrow_mut() = Some(Closure::wrap(Box::new(c) as Box<FnMut()>));
 
     request_animation_frame(g.borrow().as_ref().unwrap());
 }
 
-fn window() -> web_sys::Window {
-    web_sys::window().expect("no global `window` exists")
+pub struct CanvasRenderer {
+    universe: Universe,
+    ctx: CanvasRenderingContext2d,
 }
 
-fn request_animation_frame(f: &Closure<FnMut()>) {
-    window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
-
-pub fn draw_grid(ctx: &CanvasRenderingContext2d, universe: &Universe) {
-    let width: u32 = universe.width();
-    let widthf: f64 = f64::from(width);
-    let height: u32 = universe.height();
-    let heightf: f64 = f64::from(height);
-
-    let grid_color: wasm_bindgen::JsValue = JsValue::from_str("#CCCCCC");
-
-    ctx.begin_path();
-    ctx.set_stroke_style(&grid_color);
-
-    // Vertical lines.
-    for i in 0..width {
-        let j = f64::from(i);
-        ctx.move_to(j * (CELL_SIZE + 1.0) + 1.0, 0.0);
-        ctx.line_to(
-            j * (CELL_SIZE + 1.0) + 1.0,
-            (CELL_SIZE + 1.0) * heightf + 1.0,
-        );
+impl CanvasRenderer {
+    pub fn new(ctx: CanvasRenderingContext2d, universe: Universe) -> CanvasRenderer {
+        CanvasRenderer { universe, ctx }
     }
 
-    // Horizontal lines.
-    for j in 0..height {
-        let jf = f64::from(j);
-        ctx.move_to(0.0, jf * (CELL_SIZE + 1.0) + 1.0);
-        ctx.line_to(
-            (CELL_SIZE + 1.0) * widthf + 1.0,
-            jf * (CELL_SIZE + 1.0) + 1.0,
-        );
+    pub fn render(&mut self) {
+        self.universe.tick();
+        self.draw_grid();
+        self.draw_cells();
     }
 
-    ctx.stroke();
+    pub fn draw_grid(&self) {
+        let width: u32 = self.universe.width();
+        let widthf: f64 = f64::from(width);
+        let height: u32 = self.universe.height();
+        let heightf: f64 = f64::from(height);
+
+        self.ctx.begin_path();
+        self.ctx.set_stroke_style(&self.universe.grid_color);
+
+        // Vertical lines.
+        for column in 0..width {
+            let columnf = f64::from(column);
+            self.ctx.move_to(columnf * (CELL_SIZE + 1.0) + 1.0, 0.0);
+            self.ctx.line_to(
+                columnf * (CELL_SIZE + 1.0) + 1.0,
+                (CELL_SIZE + 1.0) * heightf + 1.0,
+            );
+        }
+
+        // Horizontal lines.
+        for row in 0..height {
+            let rowf = f64::from(row);
+            self.ctx.move_to(0.0, rowf * (CELL_SIZE + 1.0) + 1.0);
+            self.ctx.line_to(
+                (CELL_SIZE + 1.0) * widthf + 1.0,
+                rowf * (CELL_SIZE + 1.0) + 1.0,
+            );
+        }
+
+        self.ctx.stroke();
+    }
+
+    pub fn draw_cells(&self) {
+        let cells = self.universe.get_cells();
+
+        let width: u32 = self.universe.width();
+        let height: u32 = self.universe.height();
+        //let cells = new Uint8Array(memory.buffer, cellsPtr, width * height);
+
+        self.ctx.begin_path();
+
+        // Alive cells.
+        self.ctx.set_fill_style(&self.universe.alive_color);
+
+        for row in 0..height {
+            let rowf: f64 = f64::from(row);
+            for col in 0..width {
+                let idx = self.universe.get_index(row, col);
+                if cells[idx] != Cell::Alive {
+                    continue;
+                }
+
+                let colf: f64 = f64::from(col);
+                self.ctx.fill_rect(
+                    colf * (CELL_SIZE + 1.0) + 1.0,
+                    rowf * (CELL_SIZE + 1.0) + 1.0,
+                    CELL_SIZE,
+                    CELL_SIZE,
+                );
+            }
+
+        }
+
+
+        // Dead cells.
+        self.ctx.set_fill_style(&self.universe.dead_color);
+        for row in 0..height {
+            let rowf: f64 = f64::from(row);
+            for col in 0..width {
+                let idx = self.universe.get_index(row, col);
+                if cells[idx] != Cell::Dead {
+                    continue;
+                }
+
+                let colf: f64 = f64::from(col);
+                self.ctx.fill_rect(
+                    colf * (CELL_SIZE + 1.0) + 1.0,
+                    rowf * (CELL_SIZE + 1.0) + 1.0,
+                    CELL_SIZE,
+                    CELL_SIZE,
+                );
+            }
+        }
+
+
+        self.ctx.stroke();
+    }
 }
 
 #[wasm_bindgen]
@@ -145,6 +208,9 @@ pub struct Universe {
     width: u32,
     height: u32,
     cells: Vec<Cell>,
+    grid_color: wasm_bindgen::JsValue,
+    dead_color: wasm_bindgen::JsValue,
+    alive_color: wasm_bindgen::JsValue,
 }
 
 impl Universe {
@@ -231,10 +297,17 @@ impl Universe {
             })
             .collect();
 
+        let grid_color: wasm_bindgen::JsValue = JsValue::from_str("#CCCCCC");
+        let dead_color: wasm_bindgen::JsValue = JsValue::from_str("#FFFFFF");
+        let alive_color: wasm_bindgen::JsValue = JsValue::from_str("#000000");
+
         Universe {
             width,
             height,
             cells,
+            grid_color,
+            dead_color,
+            alive_color,
         }
     }
 
@@ -279,13 +352,13 @@ impl Universe {
                 let cell = self.cells[idx];
                 let live_neighbors = self.live_neighbor_count(row, col);
 
-                log!(
-                    "cell[{}, {}] is initially {:?} and has {} live neighbors",
-                    row,
-                    col,
-                    cell,
-                    live_neighbors
-                );
+                //log!(
+                //    "cell[{}, {}] is initially {:?} and has {} live neighbors",
+                //   row,
+                //    col,
+                //    cell,
+                //    live_neighbors
+                //);
 
                 let next_cell = match (cell, live_neighbors) {
                     // Rule 1: Any live cell with fewer than two live neighbours
