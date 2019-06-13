@@ -8,7 +8,6 @@
             "label": "Run npm start",
             "type": "npm",
             "script": "start",
-            "path": "www/",
             "problemMatcher": []
         }
     ]
