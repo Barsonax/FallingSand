@@ -1,9 +1,10 @@
 mod utils;
 
 use std::cell::RefCell;
+use std::process;
 use std::rc::Rc;
-use std::u32;
 use std::usize;
+
 
 use wasm_bindgen::prelude::*;
 
@@ -16,7 +17,7 @@ extern crate web_sys;
 // A macro to provide `println!(..)`-style syntax for `console.log` logging.
 macro_rules! log {
     ( $( $t:tt )* ) => {
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "console_error_panic_hook")]
         web_sys::console::log_1(&format!( $( $t )* ).into());
     }
 }
@@ -27,14 +28,40 @@ macro_rules! log {
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+impl<T> WasmUnwrap<T> for Option<T> {
+    fn unwrap_wasm(self) -> T {
+        match self {
+            Some(w) => w,
+            None => process::abort(),
+        }
+    }
+}
+
+impl<T, E> WasmUnwrap<T> for Result<T, E> {
+    fn unwrap_wasm(self) -> T {
+        match self {
+            Ok(w) => w,
+            Err(e) => process::abort(),
+        }
+    }
+}
+
+trait WasmUnwrap<T> {
+    fn unwrap_wasm(self) -> T;
+}
+
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     utils::set_panic_hook();
-    let document = web_sys::window().unwrap().document().unwrap();
+
+    let window = web_sys::window().unwrap_wasm();
+    let document = window.document().unwrap_wasm();
+
     let canvas = document
         .get_element_by_id("game-of-life-canvas")
-        .unwrap()
-        .dyn_into::<HtmlCanvasElement>()?;
+        .unwrap_wasm()
+        .dyn_into::<HtmlCanvasElement>()
+        .unwrap_wasm();
 
     let universe = Universe::new();
     let width = universe.width();
@@ -44,27 +71,25 @@ pub fn main() -> Result<(), JsValue> {
 
     let options = JsValue::from_str("{ alpha: false }");
     let ctx = canvas
-        .get_context_with_context_options("2d", &options)?
-        .unwrap()
-        .dyn_into::<CanvasRenderingContext2d>()?;
+        .get_context_with_context_options("2d", &options)
+        .unwrap_wasm()
+        .unwrap_wasm()
+        .dyn_into::<CanvasRenderingContext2d>()
+        .unwrap_wasm();
 
-    start_render_loop(ctx, universe);
+    start_render_loop(window, ctx, universe);
     Ok(())
 }
 
-fn start_render_loop(ctx: CanvasRenderingContext2d, universe: Universe) {
+fn start_render_loop(window: web_sys::Window, ctx: CanvasRenderingContext2d, universe: Universe) {
     fn request_animation_frame(f: &Closure<FnMut()>) {
         web_sys::window()
-            .unwrap()
+            .unwrap_wasm()
             .request_animation_frame(f.as_ref().unchecked_ref())
             .expect("should register `requestAnimationFrame` OK");
     }
 
     ctx.set_image_smoothing_enabled(false);
-    let window = web_sys::window().expect("should have a window in this context");
-    let performance = window
-        .performance()
-        .expect("performance should be available");
     let renderer = CanvasRenderer::new(ctx, universe);
 
     log!("Starting loop...");
@@ -73,49 +98,37 @@ fn start_render_loop(ctx: CanvasRenderingContext2d, universe: Universe) {
     let f = Rc::new(RefCell::new(None));
     let g = f.clone();
 
+    let performance = window
+        .performance()
+        .expect("performance should be available");
     let mut lastFrameTimeStamp = performance.now();
     let c = move || {
         if let Some(the_self) = Rc::get_mut(&mut rc) {
             the_self.render();
         };
-        request_animation_frame(f.borrow().as_ref().unwrap());
 
         let now = performance.now();
         let delta = now - lastFrameTimeStamp;
         lastFrameTimeStamp = now;
         let fps = 1.0 / delta * 1000.0;
         log!("fps: {}", fps);
+
+        request_animation_frame(f.borrow().as_ref().unwrap_wasm());
     };
 
     *g.borrow_mut() = Some(Closure::wrap(Box::new(c) as Box<FnMut()>));
 
-    request_animation_frame(g.borrow().as_ref().unwrap());
+    request_animation_frame(g.borrow().as_ref().unwrap_wasm());
 }
 
 pub struct CanvasRenderer {
     universe: Universe,
     ctx: CanvasRenderingContext2d,
-    pixel_data: Box<Vec<u8>>,
-    image_data: ImageData,
 }
 
 impl CanvasRenderer {
     pub fn new(ctx: CanvasRenderingContext2d, universe: Universe) -> CanvasRenderer {
-        let width: u32 = universe.width();
-        let height: u32 = universe.height();
-        let length = (width * height) as usize;
-
-        let mut pixel_data = Box::new(vec![0; length * 4]);
-
-        let image_data =
-            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut *pixel_data), width, height)
-                .unwrap();
-        CanvasRenderer {
-            universe,
-            ctx,
-            pixel_data,
-            image_data,
-        }
+        CanvasRenderer { universe, ctx }
     }
 
     pub fn render(&mut self) {
@@ -129,7 +142,12 @@ impl CanvasRenderer {
         let height: u32 = self.universe.height();
         let length = (width * height) as usize;
 
-        let data = &mut *&mut self.pixel_data;
+
+        let mut data = vec![0; length * 4];
+
+        let image_data =
+            ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut data), width, height)
+                .unwrap_wasm();
 
         for i in 0..length {
             if cells[i] == Cell::Alive {
@@ -146,8 +164,7 @@ impl CanvasRenderer {
                 data[idx + 3] = 255;
             }
         }
-
-        self.ctx.put_image_data(&self.image_data, 0.0, 0.0).unwrap();
+        self.ctx.put_image_data(&image_data, 0.0, 0.0).unwrap_wasm();
     }
 }
 
@@ -229,20 +246,9 @@ impl Universe {
         &self.cells
     }
 
-    /// Set cells to be alive in a universe by passing the row and column
-    /// of each cell as an array.
-    pub fn set_cells(&mut self, cells: &[(u32, u32)]) {
-        for (row, col) in cells.iter().cloned() {
-            let idx = self.get_index(row, col);
-            self.cells[idx] = Cell::Alive;
-        }
-    }
-}
-
-impl Universe {
     pub fn new() -> Universe {
-        let width = 270;
-        let height = 270;
+        let width = 1024;
+        let height = 768;
 
         let cells = (0..width * height)
             .map(|i| {
