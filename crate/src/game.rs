@@ -6,21 +6,21 @@ use wasm_bindgen::JsCast;
 
 use crate::utils::WasmUnwrap;
 
-pub struct Game {
+pub struct AnimationCallback {
     callback: Box<FnMut()>,
 }
 
 pub struct RequestAnimationFrameLoop {
-    instance: Rc<Game>,
+    callback: Rc<AnimationCallback>,
 }
 
 impl RequestAnimationFrameLoop {
-    pub fn new(instance: Rc<Game>) -> RequestAnimationFrameLoop {
-        RequestAnimationFrameLoop { instance }
+    pub fn new(callback: Rc<AnimationCallback>) -> RequestAnimationFrameLoop {
+        RequestAnimationFrameLoop { callback }
     }
 
     pub fn start(&mut self) {
-        let mut animationloop = self.instance.clone();
+        let mut callback = self.callback.clone();
         let f = Rc::new(RefCell::new(None));
         let g = f.clone();
 
@@ -31,8 +31,8 @@ impl RequestAnimationFrameLoop {
                 .unwrap_wasm();
         }
         let c = move || {
-            if let Some(the_self) = Rc::get_mut(&mut animationloop) {
-                (the_self.callback)();
+            if let Some(r) = Rc::get_mut(&mut callback) {
+                (r.callback)();
             }
             request_animation_frame(f.try_borrow().unwrap_wasm().as_ref().unwrap_wasm());
         };
@@ -42,8 +42,8 @@ impl RequestAnimationFrameLoop {
     }
 }
 
-impl Game {
-    pub fn new(callback: Box<FnMut()>) -> Game {
-        Game { callback }
+impl AnimationCallback {
+    pub fn new(callback: Box<FnMut()>) -> AnimationCallback {
+        AnimationCallback { callback }
     }
 }

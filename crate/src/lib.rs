@@ -5,7 +5,7 @@ mod game;
 mod renderer;
 mod universe;
 
-use crate::game::{Game, RequestAnimationFrameLoop};
+use crate::game::{AnimationCallback, RequestAnimationFrameLoop};
 use crate::renderer::Renderer;
 use crate::universe::Universe;
 use std::cell::RefCell;
@@ -15,7 +15,7 @@ use utils::WasmUnwrap;
 use wasm_bindgen::prelude::*;
 
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, Node};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
 extern crate web_sys;
 
@@ -66,11 +66,11 @@ pub fn main() -> Result<(), JsValue> {
 
     let renderer_ptr = Rc::new(RefCell::new(Renderer::new(ctx, universe_ptr.clone())));
 
-    let game = Rc::new(Game::new(Box::new(move ||{
+    let callback = Rc::new(AnimationCallback::new(Box::new(move || {
         universe_ptr.borrow_mut().tick();
         renderer_ptr.borrow_mut().draw();
-     })));
-    let mut animation_loop = RequestAnimationFrameLoop::new(game);
+    })));
+    let mut animation_loop = RequestAnimationFrameLoop::new(callback);
 
     log!("start animation loop");
     animation_loop.start();
