@@ -4,15 +4,10 @@ use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 
-use crate::renderer::Renderer;
-use crate::universe::Universe;
-
 use crate::utils::WasmUnwrap;
 
 pub struct Game {
-    universe_ptr: Rc<RefCell<Universe>>,
-    renderer_ptr: Rc<RefCell<Renderer>>,
-    pub closure: Option<Closure<Fn(f64)>>,
+    callback: Box<FnMut()>,
 }
 
 pub struct RequestAnimationFrameLoop {
@@ -37,7 +32,7 @@ impl RequestAnimationFrameLoop {
         }
         let c = move || {
             if let Some(the_self) = Rc::get_mut(&mut animationloop) {
-                the_self.render_step();
+                (the_self.callback)();
             }
             request_animation_frame(f.try_borrow().unwrap_wasm().as_ref().unwrap_wasm());
         };
@@ -48,16 +43,7 @@ impl RequestAnimationFrameLoop {
 }
 
 impl Game {
-    pub fn new(universe: Rc<RefCell<Universe>>, renderer: Rc<RefCell<Renderer>>) -> Game {
-        Game {
-            universe_ptr: universe,
-            renderer_ptr: renderer,
-            closure: None,
-        }
-    }
-
-    pub fn render_step(&mut self) {
-        self.universe_ptr.borrow_mut().tick();
-        self.renderer_ptr.borrow_mut().draw();
+    pub fn new(callback: Box<FnMut()>) -> Game {
+        Game { callback }
     }
 }

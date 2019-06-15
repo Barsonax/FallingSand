@@ -15,7 +15,7 @@ use utils::WasmUnwrap;
 use wasm_bindgen::prelude::*;
 
 use wasm_bindgen::JsCast;
-use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, Node};
 
 extern crate web_sys;
 
@@ -30,12 +30,25 @@ pub fn main() -> Result<(), JsValue> {
 
     let window = web_sys::window().unwrap_wasm();
     let document = window.document().unwrap_wasm();
+    let body = document.body().unwrap_wasm();
+
+    let game_of_life_canvas_element = document.create_element("canvas").unwrap_wasm();
+    game_of_life_canvas_element.set_id("game-of-life-canvas");
+    game_of_life_canvas_element
+        .set_attribute("style", "transform: scaleY(1) scaleX(1)")
+        .unwrap_wasm();
+    body.insert_before(&game_of_life_canvas_element, None)
+        .unwrap_wasm();
 
     let canvas = document
         .get_element_by_id("game-of-life-canvas")
         .unwrap_wasm()
         .dyn_into::<HtmlCanvasElement>()
         .unwrap_wasm();
+
+    let fps_div = document.create_element("div").unwrap_wasm();
+    fps_div.set_id("fps");
+    body.insert_before(&fps_div, None).unwrap_wasm();
 
     let width = 1024;
     let height = 768;
@@ -53,7 +66,10 @@ pub fn main() -> Result<(), JsValue> {
 
     let renderer_ptr = Rc::new(RefCell::new(Renderer::new(ctx, universe_ptr.clone())));
 
-    let game = Rc::new(Game::new(universe_ptr, renderer_ptr));
+    let game = Rc::new(Game::new(Box::new(move ||{
+        universe_ptr.borrow_mut().tick();
+        renderer_ptr.borrow_mut().draw();
+     })));
     let mut animation_loop = RequestAnimationFrameLoop::new(game);
 
     log!("start animation loop");

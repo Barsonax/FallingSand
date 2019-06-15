@@ -16,7 +16,9 @@ version = "0.3.22"
 features = [
   'Document',
   'Element',
+  'HtmlElement',
   'HtmlCanvasElement',
+  'Node',
   'Window',
   'console',
   'ImageData',
