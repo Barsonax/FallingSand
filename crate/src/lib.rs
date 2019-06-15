@@ -26,6 +26,7 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     utils::set_panic_hook();
+    log!("main");
 
     let window = web_sys::window().unwrap_wasm();
     let document = window.document().unwrap_wasm();
@@ -55,6 +56,7 @@ pub fn main() -> Result<(), JsValue> {
     let game = Rc::new(Game::new(universe_ptr, renderer_ptr));
     let mut animation_loop = RequestAnimationFrameLoop::new(game);
 
+    log!("start animation loop");
     animation_loop.start();
 
     Ok(())

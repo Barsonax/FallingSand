@@ -48,10 +48,7 @@ impl RequestAnimationFrameLoop {
 }
 
 impl Game {
-    pub fn new(
-        universe: Rc<RefCell<Universe>>,
-        renderer: Rc<RefCell<Renderer>>,
-    ) -> Game {
+    pub fn new(universe: Rc<RefCell<Universe>>, renderer: Rc<RefCell<Renderer>>) -> Game {
         Game {
             universe_ptr: universe,
             renderer_ptr: renderer,
@@ -60,8 +57,7 @@ impl Game {
     }
 
     pub fn render_step(&mut self) {
-        log!("tick");
         self.universe_ptr.borrow_mut().tick();
-        self.renderer_ptr.borrow().draw();
+        self.renderer_ptr.borrow_mut().draw();
     }
 }

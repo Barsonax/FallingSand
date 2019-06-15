@@ -11,33 +11,41 @@ use crate::utils::WasmUnwrap;
 pub struct Renderer {
     universe: Rc<RefCell<Universe>>,
     ctx: CanvasRenderingContext2d,
+    pixels: Vec<u8>,
 }
 
 impl Renderer {
-    pub fn new(ctx: CanvasRenderingContext2d, universe: Rc<RefCell<Universe>>) -> Renderer {
-        Renderer { universe, ctx }
+    pub fn new(ctx: CanvasRenderingContext2d, universe_ptr: Rc<RefCell<Universe>>) -> Renderer {
+        let universe = universe_ptr.borrow();
+        let width: u32 = universe.width();
+        let height: u32 = universe.height();
+        let length = (width * height) as usize;
+        let pixels = vec![0; length * 4];
+        Renderer {
+            universe: universe_ptr.clone(),
+            ctx,
+            pixels,
+        }
     }
 
-    pub fn draw(&self) {
+    pub fn draw(&mut self) {
         self.draw_cells();
     }
 
-    fn draw_cells(&self) {
+    fn draw_cells(&mut self) {
         let universe = self.universe.borrow_mut();
 
         let cells = universe.get_cells();
         let width: u32 = universe.width();
         let height: u32 = universe.height();
-        let length = (width * height) as usize;
 
-
-        let mut data = vec![0; length * 4];
+        let mut data = &mut self.pixels;
 
         let image_data =
             ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut data), width, height)
                 .unwrap_wasm();
 
-        for i in 0..length {
+        for i in 0..cells.len() {
             if cells[i] == Cell::Alive {
                 let idx = i * 4;
                 data[idx] = 0;

@@ -8,7 +8,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [features]
-development = ["console_error_panic_hook"]
+default = ["console_error_panic_hook"]
 production = []
 
 [dependencies.web-sys]
@@ -35,4 +35,4 @@ wee_alloc = { version = "0.4.2", optional = true }
 wasm-bindgen-test = "0.2.45"
 
 [profile.release]
-lto = true
+#lto = true

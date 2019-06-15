@@ -1,2 +1,1 @@
-import('falling-sand')
-  .catch(console.error);
+import('falling-sand').catch(console.error);
